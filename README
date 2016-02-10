@@ -1,0 +1,1 @@
+Project for the MPRI course Proof of Program www.lri.fr/~marche/MPRI-2-36-1/ (2015-2016). It consists in using Why3 to prove a divide-and-conquer algorithm which finds the closest pair of points from a given set of points in 2 dimensions.
