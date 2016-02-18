@@ -72,25 +72,21 @@ predicate closest_pair_post (a:array point) (r:closest_pair_result) =
     the sub-array must be at least 2. *)
 let brute_force_search_sub_array (a:array point) (low high:int) :
      closest_pair_result
-  requires { 0 <= low }
-  requires { low + 2 <= high }
-  requires { high <= a.length }
+  requires { 0 <= low /\ low+2 <= high <= a.length }
   ensures { closest_pair_post_for a low high result }
 = let f = ref low in
   let s = ref (low+1) in
   let min = ref (dist a[low] a[low+1]) in
   for i = low to high - 2 do
     invariant { distinct_indices_in_range !f !s low high }
-    invariant { !min <=. dist a[low] a[low+1] }
     invariant { dist a[!f] a[!s] = !min }
     invariant { forall x y. distinct_indices_in_range x y low high /\ x < i -> dist a[x] a[y] >=. !min }
     let ghost m_loop_i = !min in
     for j = i+1 to high - 1 do
       invariant { distinct_indices_in_range !f !s low high }
-      invariant { !min <=. dist a[low] a[low+1] }
       invariant { dist a[!f] a[!s] = !min }
       (*invariant { forall x y. distinct_indices_in_range x y low high /\ (x < i \/ (x = i /\ y < j)) -> dist a[x] a[y] >=. !min }*)
-      invariant { forall y. distinct_indices_in_range i y low high /\ y < j -> dist a[i] a[y] >=. !min }
+      invariant { forall y. distinct_indices_in_range i y low high /\ i+1 <= y < j -> dist a[i] a[y] >=. !min }
       invariant { !min <=. m_loop_i }
       let d = dist a[i] a[j] in
       if d <. !min then (f := i; s := j; min := d)
@@ -179,21 +175,6 @@ predicate points_on_x_axis (a:array point) =
 
 (** {3 Algorithms assuming a sorted array as input} *)
 
-
-(*
-let lemma adjacent (a: array point) : unit
-  requires { sorted proj_x a }
-  ensures { forall low high r. closest_pair_post_for a low high r /\ r.first < r.second -> r.second = r.first + 1 }
-= ()
-*)
-(*
-let ghost adjacent (a: array point) (low high i: int) : unit
-  requires { sorted proj_x a }
-  requires { 0 <= low <= i /\ i+1 < high <= a.length }
-  ensures { forall j k. j <= i < k -> dist a[i] a[i+1] <=. dist a[j] a[k] }
-= ()
-*)
-
 (* QUESTION 5 *)
 
 (** [linear_search a] returns the solution to the closest pair problem
@@ -208,48 +189,15 @@ let linear_search (a:array point) : closest_pair_result
   for i = 1 to a.length - 2 do
     invariant { closest_pair_post_for a 0 (i+1) { delta = !min; first = !f; second = !f+1 } }
     let d = dist a[i] a[i+1] in
-      if d <. !min then 
-        begin
-        (*assert { forall x y. distinct_indices_in_range x y 0 i -> dist a[x] a[y] >=. d };
-	
-	assert { forall x y. distinct_indices_in_range x y 0 (i+1) -> dist a[x] a[y] >=. d };*)
-	(min := d; f := i)
-	end
+      if d <. !min then (min := d; f := i)
   done;
   { delta = !min ; first = !f ; second = !f+1 }
 
 (* QUESTION 6 *)
 
-(*let lemma closer_smaller (a: array point) (i j k l: int) : unit
-  requires { sorted proj_x a }
-  requires { 0 <= i <= j < k <= l < a.length }
-  ensures { dist a[j] a[k] <=. dist a[i] a[l] }
-= ()*)
-(*.77 2.71 .71*)
-
-(*lemma closer_smaller2 : forall a i j k l. sorted proj_x a 
--> 0 <= i <= j < k <= l < a.length 
--> dist a[j] a[k] <=. dist a[i] a[l]*)
-(*.11 2.91 1.57*)
-(*
-lemma closer_indexes_closer_points : forall a i j k l.
-  sorted proj_x a /\ 0 <= i <= j < k <= l < a.length ->
-    dist a[j] a[k] <=. dist a[i] a[l]
-(*.10 2.91 .73*)*)
-
-(*lemma middle:
-forall a i j m .
-           sorted proj_x a ->
-                   0 <= i < m <= j < a.length ->
-                          dist a[m-1] a[m] <=. dist a[i] a[j] *)
-(*.1 2.24 .55*)
-
 lemma consecutive_closer_than_apart: forall a i j k.
   sorted proj_x a /\ 0 <= i < j <= k < a.length ->
     dist a[j-1] a[j] <=. dist a[i] a[k] 
-(*.1 2.24 .55*)
-
-
 
 (** [divide_and_conquer a] returns the solution to the closest pair problem
     for the set of points [a], assuming that [a] is sorted. Worst-case
@@ -263,36 +211,26 @@ let rec divide_and_conquer (a:array point) (low high:int) : closest_pair_result
   if len <= 3 then brute_force_search_sub_array a low high else
   let middle = low + ComputerDivision.div len 2 in
   let r1 = divide_and_conquer a low middle in
-  assert { forall x y. distinct_indices_in_range x y low middle -> dist a[x] a[y] >=. r1.delta };
+  assert { forall x y. distinct_indices_in_range x y low middle -> dist a[x] a[y] >=. r1.delta }; (* not necessary but makes proof a little faster *)
   let r2 = divide_and_conquer a middle high in
-  assert { forall x y. distinct_indices_in_range x y middle high -> dist a[x] a[y] >=. r2.delta }; (* 8s si mis plus tard ! *)
+  assert { forall x y. distinct_indices_in_range x y middle high -> dist a[x] a[y] >=. r2.delta }; (* not necessary but makes proof a little faster *)
   let r = if r1.delta <. r2.delta then r1 else r2 in
   let d = dist a[middle - 1] a[middle] in
   assert { forall x y. low <= x < middle <= y < high -> dist a[x] a[y] >=. d };
   if d <. r.delta then
     begin
-    assert { forall x y. low <= x < y < high -> dist a[x] a[y] >=. d }; (* gagne environ .4s: .73+.16 au lieu de 1.3s pour l'assert suivant seul *)
-    assert { forall x y. distinct_indices_in_range x y low high -> dist a[x] a[y] >=. d }; (*.16+.11s au lieu de 1.5s pour la postcondition (assert au-dessus présent dans les deux cas)*)
-    (*assert {distinct_indices_in_range (middle-1) middle low high}; ne gagne rien*)
+    assert { forall x y. distinct_indices_in_range x y low high -> dist a[x] a[y] >=. d }; (* not necessary but makes proof much faster *)
     { delta = d ; first = middle - 1 ; second = middle }
     end
   else 
     begin
     assert { forall x y. distinct_indices_in_range x y low high -> dist a[x] a[y] >=. r.delta };
-    (*assert {r.delta = dist a[r.first] a[r.second]}; pire ! .5s+1.5s au lieu de 1s *)
     r
     end
 
 
 
 (* QUESTION 7 *)
-
-(*
-let lemma distinct_indices_in_range_permutation (a b: array point) (i j: int) : unit
-  requires { is_permute a b p }
-  requires { distinct_
-  ensures {
-*)
 
 (** [full_divide_and_conquer a] returns the solution to the closest pair
     problem for the set of points [a]. Assuming that sorting is done
@@ -302,19 +240,9 @@ let full_divide_and_conquer (a:array point) : closest_pair_result
   ensures { closest_pair_post a result }
 = let b = Array.copy a in
   let p = sort proj_x b in
-  assert { is_permute a b p };
   let r = divide_and_conquer b 0 a.length in
-  assert { closest_pair_post b r };
-  (*assert { b[0] = a[p.direct 0] };*)
-  (*assert { forall x y. distinct_indices_in_range x y 0 a.length -> (p.reciprocal x) <> (p.reciprocal y) };*)
-  assert { forall x y. distinct_indices_in_range x y 0 a.length -> dist b[x] b[y] >=. r.delta };
-  (*assert { forall x y. distinct_indices_in_range x y 0 a.length -> dist a[p.direct x] a[p.direct y] >=. r.delta };*)
-  (*assert { forall x y. distinct_indices_in_range x y 0 a.length -> distinct_indices_in_range (p.reciprocal x) (p.reciprocal y) 0 a.length };*)
-  (*assert { forall x y. distinct_indices_in_range x y 0 a.length -> dist b[p.reciprocal x] b[p.reciprocal y] >=. r.delta };*)
   assert { forall x y. distinct_indices_in_range x y 0 a.length -> dist a[x] a[y] = dist b[p.reciprocal x] b[p.reciprocal y] >=. r.delta };
-  (*assert { forall x y. distinct_indices_in_range x y 0 a.length -> dist a[x] a[y] >=. r.delta };*)
   { delta = r.delta ; first = p.direct r.first ; second = p.direct r.second }
-
 end
 
 
@@ -349,6 +277,7 @@ exception Break
      to the [mu - delta, mu + delta].  If the minimal distance is not
      less than [delta], this function just returns [delta]. *)
 let search_strip (a:array point) (delta:real) : closest_pair_result
+  requires { exists mu. forall i. 0 <= i < a.length -> mu -. delta <. a[i].x <. mu +. delta } (* not necessary to verify this function, but useful to check when calling it because this allows it to be replaced by function search_strip_complexity (question 14) *)
   ensures { result.delta <=. delta }
   ensures { result.delta <. delta -> closest_pair_post a result }
   ensures { result.delta >=. delta -> forall i j. distinct_indices_in_range i j 0 a.length -> dist a[i] a[j] >=. result.delta }
@@ -371,39 +300,32 @@ let search_strip (a:array point) (delta:real) : closest_pair_result
       for j = i+1 to b.length - 1 do
         invariant { !m <. delta -> distinct_indices_in_range !f !s 0 b.length }
     	invariant { !m <. delta -> dist b[!f] b[!s] = !m }
-(*    	invariant { !m <. delta -> forall x y. distinct_indices_in_range x y 0 b.length /\ (x < i \/ (x = i /\ y < j)) -> dist b[x] b[y] >=. !m }
-    	invariant { !m >=. delta -> forall x y. distinct_indices_in_range x y 0 b.length /\ (x < i \/ (x = i /\ y < j)) -> dist b[x] b[y] >=. delta }
-*)
 	invariant { !m <. delta -> forall y. distinct_indices_in_range i y 0 b.length /\ y < j -> dist b[i] b[y] >=. !m }
-    	invariant { !m >=. delta -> forall y. distinct_indices_in_range i y 0 b.length /\ y < j -> dist b[i] b[y] >=. delta }
         invariant { !m <=. m_loop_i }
+    	invariant { !m >=. delta -> forall y. distinct_indices_in_range i y 0 b.length /\ y < j -> dist b[i] b[y] >=. delta }
         if b[j].y >=. b[i].y +. !m then
           begin
-            assert { forall y. j <= y < b.length -> dist b[i] b[y] >=. !m };
+            assert { forall y. j <= y < b.length -> dist b[i] b[y] >=. !m }; (* not necessary but makes proof faster *)
             raise Break;
           end;
         let d = dist b[i] b[j] in
-        if d <. !m then 
-	  begin
-	  (*assert { forall x y. (x < i \/ (x = i /\ y < j+1)) -> (x < i \/ (x = i /\ y < j)) \/ (x=i /\ y=j+1) };*)
-	  (m := d; f := i; s := j);
-	  end
+        if d <. !m then
+	  (m := d; f := i; s := j)
      done
     with Break -> ()
     end
-  done; 
-  assert { forall i j. distinct_indices_in_range i j 0 a.length -> dist a[i] a[j] = dist b[p.reciprocal i] b[p.reciprocal j] };
+  done;
   if !m <. delta then
     begin
-    assert { forall i j. distinct_indices_in_range i j 0 a.length -> dist b[i] b[j] >=. !m };
+    assert { forall i j. distinct_indices_in_range i j 0 a.length -> dist b[i] b[j] >=. !m }; (* not necessary but makes proof faster *)
     assert { forall i j. distinct_indices_in_range i j 0 a.length -> dist a[i] a[j] = dist b[p.reciprocal i] b[p.reciprocal j] >=. !m };
     let f' = p.direct !f in let s' = p.direct !s in
-    assert { dist a[f'] a[s'] = !m /\ distinct_indices_in_range f' s' 0 a.length}; (* AE: 3s postcondition alone, 2s assert then instant pc; CVC: 2s pc alone, instant assert then 1s pc *)
+    assert { dist a[f'] a[s'] = !m /\ distinct_indices_in_range f' s' 0 a.length}; (* not necessary but makes proof faster *)
     { delta = !m ; first = f'; second = s' }
     end
   else
     begin
-    assert { forall i j. distinct_indices_in_range i j 0 a.length -> dist b[i] b[j] >=. delta }; (*.58 -> .04+.41*)
+    assert { forall i j. distinct_indices_in_range i j 0 a.length -> dist b[i] b[j] >=. delta }; (* not necessary but makes proof faster *)
     assert { forall i j. distinct_indices_in_range i j 0 a.length -> dist a[i] a[j] = dist b[p.reciprocal i] b[p.reciprocal j] >=. delta };
     { delta = delta ; first = 0; second = 0 }
     end
@@ -431,7 +353,6 @@ let left_border (a:array point) (low middle : int)
     invariant { !l < middle -> a[!l].x >. mu -. delta }
     l := !l - 1
   done;
-  (*assert { forall i. !l <= i < middle -> mu -. delta <. a[!l].x <=. a[i].x };*)
   !l
 
 (** [right_border a middle high mu delta] returns an index [k] such
@@ -460,8 +381,6 @@ let right_border (a:array point) (middle high : int)
 
 (* QUESTION 10 *)
 
-(*lemma closest_pair_conseq: forall a r. closest_pair_post a r -> r.delta = dist a[r.first] a[r.second]*)
-
 (** [divide_and_conquer a low high] returns the solution to the
     closest pair problem for the sub-array [a[low..high-1]]. It
     assumes [a] of length at least 2 and sorted in increasing order
@@ -479,44 +398,32 @@ let rec divide_and_conquer (a:array point) (low high:int) : closest_pair_result
       let r2 = divide_and_conquer a middle high in
       let r = if r1.delta <. r2.delta then r1 else r2 in
       let d = r.delta in 
-      assert { forall i j. distinct_indices_in_range i j low middle -> dist a[i] a[j] >=. d };
-      assert { forall i j. low <= i < j < middle -> dist a[i] a[j] >=. d };
-      assert { forall i j. distinct_indices_in_range i j middle high -> dist a[i] a[j] >=. d };
+      assert { forall i j. distinct_indices_in_range i j low middle -> dist a[i] a[j] >=. d }; (*a*) (* not necessary but makes proof faster *)
+      assert { forall i j. distinct_indices_in_range i j middle high -> dist a[i] a[j] >=. d }; (*a*) (* not necessary but makes proof faster *)
       let mu = (a[middle - 1].x +. a[middle].x) /. 2.0 in
-      (*assert { a[middle].x >=. mu };*)
-      assert { forall i. low <= i < middle ->  a[i].x <=. mu };
-      assert { forall j. middle <= j < high ->  a[j].x >=. mu };
+      assert { forall i. low <= i < middle ->  a[i].x <=. mu }; (*b*)
+      assert { forall i. middle <= i < high ->  a[i].x >=. mu }; (*b*)
       let left = left_border a low middle mu d in
       let right = right_border a middle high mu d in
-      (*assert { forall i j. low <= i < left /\ right <= j < high -> dist a[i] a[j] >=. a[j].x -. a[i].x >=. d };*)
-      (*assert { forall i j. low <= i < left /\ right <= j < high -> a[i].x <=. mu -. d /\ a[j].x >=. mu +. d/\ dist a[i] a[j] >=. abs (a[j].x -. a[i].x) >=. d };*)
-      assert { forall i j. low <= i < left /\ middle <= j < high -> (*a[i].x <=. mu -. d /\ a[j].x >=. mu /\*) dist a[i] a[j] >=. abs (a[j].x -. a[i].x) >=. d };
-      assert { forall i j. distinct_indices_in_range i j low high /\ i < left -> (*(low <= i < j < middle \/ (low <= i < left /\ middle <= j < high)) /\*) dist a[i] a[j] >=. d };
-      assert { forall i j. low <= i < middle /\ right <= j < high -> dist a[i] a[j] >=. abs (a[j].x -. a[i].x) >=. d };
-      assert { forall i j. distinct_indices_in_range i j low high /\ j >= right -> dist a[i] a[j] >=. d };
       let temp = Array.sub a left (right - left) in
-      (* temp is the sub-array a[left..right-1] *) 
+      (* temp is the sub-array a[left..right-1] *)
+      assert { forall i. 0 <= i < temp.length -> mu -. d <. temp[i].x <. mu +. d }; (*c*)
       let res = search_strip temp d in
       
       if res.delta <. d then
         begin
-	  assert { forall i j. distinct_indices_in_range i j 0 (right-left) -> dist temp[i] temp[j] >=. res.delta };
-	  assert { forall i j. distinct_indices_in_range i j left right -> dist a[i] a[j] = dist temp[i-left] temp[j-left] >=. res.delta };
-	  assert { forall i j. distinct_indices_in_range i j low high -> dist a[i] a[j] >=. res.delta };
+	  assert { forall i j. distinct_indices_in_range i j 0 (right-left) -> dist temp[i] temp[j] >=. res.delta }; (*d1*)
+	  assert { forall i j. distinct_indices_in_range i j left right -> dist a[i] a[j] = dist temp[i-left] temp[j-left] >=. res.delta }; (*d2*)
+	  assert { forall i j. distinct_indices_in_range i j low high -> dist a[i] a[j] >=. res.delta }; (*d3*)
 	  let f = res.first + left in let s = res.second + left in
-	  assert { forall a r. closest_pair_post a r -> r.delta = dist a[r.first] a[r.second] };
-	  (*assert { closest_pair_post temp res -> res.delta = dist temp[res.first] temp[res.second] }; without assert just above, takes 3s with AE, failed by CVC3, probably because too many information on the distances. the forall above forces use of the predicate because no other info*)
-	  (*assert { dist temp[res.first] temp[res.second] = res.delta };
-	  assert { dist temp[f-left] temp[s-left] = res.delta };*)
-	  assert { dist a[f] a[s] = dist temp[f-left] temp[s-left] = res.delta }; (*.64 -> .15+.26*)
-	  (*assert { distinct_indices_in_range f s low high }; does not affect time for postcondition*)
+	  assert { forall t re. closest_pair_post t re -> re.delta = dist t[re.first] t[re.second] }; (*e1*)
+	  assert { dist a[f] a[s] = dist temp[f-left] temp[s-left] = res.delta }; (*e2*) (* not necessary but makes proof a little faster*)
           { res with first = f; second = s }
         end
       else 
         begin
-	  assert { forall i j. distinct_indices_in_range i j 0 (right-left) -> dist temp[i] temp[j] >=. d };
-	  assert { forall i j. distinct_indices_in_range i j left right -> dist a[i] a[j] = dist temp[i-left] temp[j-left] >=. d };
-	  assert { forall i j. distinct_indices_in_range i j low high -> dist a[i] a[j] >=. res.delta };
+	  assert { forall i j. distinct_indices_in_range i j left right -> dist a[i] a[j] = dist temp[i-left] temp[j-left] >=. d }; (*f*)
+	  assert { forall i j. distinct_indices_in_range i j low high -> dist a[i] a[j] >=. res.delta }; (*f*)
 	  r
 	end
     end
@@ -533,7 +440,7 @@ let main_algorithm (a:array point) : closest_pair_result
 = let b = Array.copy a in
   let p = sort proj_x b in
   let r = divide_and_conquer b 0 b.length in
-  assert { forall x y. distinct_indices_in_range x y 0 a.length -> dist b[x] b[y] >=. r.delta };
+  assert { forall x y. distinct_indices_in_range x y 0 a.length -> dist b[x] b[y] >=. r.delta }; (* not necessary but makes proof faster *)
   assert { forall x y. distinct_indices_in_range x y 0 a.length -> dist a[x] a[y] = dist b[p.reciprocal x] b[p.reciprocal y] >=. r.delta };
   { delta = r.delta ; first = p.direct r.first ; second = p.direct r.second }
 
@@ -595,9 +502,9 @@ let ghost pigeon_hole (side:array bool) (k:int) : (int,int,int,int,bool)
   requires { 0 <= k }
   requires { k + 6 < side.length }
   ensures  { match result with (i1,i2,i3,i4,s) ->
-              k <= i1 < i2 < i3 < i4 <= k + 6 &&
-              side[i1] = side[i2] = side[i3] = side[i4] = s
-            end }
+               k <= i1 < i2 < i3 < i4 <= k + 6 &&
+               side[i1] = side[i2] = side[i3] = side[i4] = s
+             end }
 = let left = Array.make 7 0 in
   let right = Array.make 7 0 in
   let nl = ref 0 in
@@ -615,10 +522,6 @@ let ghost pigeon_hole (side:array bool) (k:int) : (int,int,int,int,bool)
                else (right[0],right[1],right[2],right[3],False)
 
 (* QUESTION 13 *)
-
-(*let test x ensures{result=x} = x
-let test1 x ensures{result=x} =
-let f y ensures{result=y}= y in f x*)
 
 (** [too_many_points_in_rectangle a mu delta k side] is a ghost function that
     derives a contradiction assuming that all the 7 points [a[k]] to
@@ -685,35 +588,21 @@ let search_strip_complexity (a:array point) (delta : real)
   ensures { result.delta <=. delta }
   ensures { result.delta <. delta -> closest_pair_post a result }
   ensures { result.delta >=. delta -> forall i j. distinct_indices_in_range i j 0 a.length -> dist a[i] a[j] >=. result.delta }
-
-(* take code from search_strip and insert :
-
-        invariant { j <= i + 6 }
-        if b[j].y >=. b[i].y +. !m then
-          begin
-            ...
-            raise Break;
-          end;
-        if j = i + 6 then too_many_points_in_rectangle ...;
-
-*)
-
 = if a.length < 2 then
     (* dummy values for first and second *)
     { delta = delta ; first = 0; second = 0 }
   else
-begin 
-(*assert { mu -. delta <=. a[0].x <=. mu +. delta /\ delta >=. 0.0 };*)
+begin
   let b = Array.copy a in
   let p = sort proj_y b in
   let sb = Array.copy side in
   for k = 0 to b.length - 1 do
     invariant { forall i. 0 <= i < k -> sb[i] = side[p.direct i] }
     invariant { forall i. 0 <= i < k -> if sb[i] then b[i].x >=. mu else b[i].x <=. mu }
-    (*assert { 0 <= p.direct k < side.length };*)
     sb[k] <- side[p.direct k];
-    (*assert { b[k] = a[p.direct k] /\ if sb[k] then b[k].x >=. mu else b[k].x <=. mu };*)
   done;
+  assert { forall i j. distinct_indices_in_range i j 0 a.length -> side[p.direct i] = side [p.direct j] -> delta <=. dist a[p.direct i]  a[p.direct j] };
+  assert { forall i j. distinct_indices_in_range i j 0 a.length -> sb[i] = sb[j] -> delta <=. dist b[i] b[j] };
   let f = ref 0 in
   let s = ref 0 in
   let m = ref delta in
@@ -729,70 +618,42 @@ begin
         invariant { j <= i + 6 }
         invariant { !m <. delta -> distinct_indices_in_range !f !s 0 b.length }
     	invariant { !m <. delta -> dist b[!f] b[!s] = !m }
-(*    	invariant { !m <. delta -> forall x y. distinct_indices_in_range x y 0 b.length /\ (x < i \/ (x = i /\ y < j)) -> dist b[x] b[y] >=. !m }
-    	invariant { !m >=. delta -> forall x y. distinct_indices_in_range x y 0 b.length /\ (x < i \/ (x = i /\ y < j)) -> dist b[x] b[y] >=. delta }
-*)
 	invariant { !m <. delta -> forall y. distinct_indices_in_range i y 0 b.length /\ y < j -> dist b[i] b[y] >=. !m }
     	invariant { !m >=. delta -> forall y. distinct_indices_in_range i y 0 b.length /\ y < j -> dist b[i] b[y] >=. delta }
         invariant { !m <=. m_loop_i }
         if b[j].y >=. b[i].y +. !m then
           begin
-            assert { forall y. j <= y < b.length -> dist b[i] b[y] >=. (*abs (b[y].y -. b[j].y) >=.*) !m };
+            assert { forall y. j <= y < b.length -> b[y].y >=. b[i].y +. !m };
+            assert { forall y. j <= y < b.length -> dist b[i] b[y] >=. !m };
             raise Break;
           end;
-	assert { b[j].y <. b[i].y +. !m };
 	if j = i + 6 then 
 	  begin
-	  assert { mu -. delta <=. a[0].x <=. mu +. delta /\ delta >=. 0.0 };
+	  (* the three following asserts are not necessary but make the proof a lot faster *)
 	  assert { forall x. i+1 <= x < b.length -> b[i].y <=. b[x].y };
 	  assert { forall x. 0 <= x <= i+6 -> b[x].y <=. b[j].y <. b[i].y +. !m <=. b[i].y +. delta };
-	  (*assert { forall x. i+1 <= x <= i+6 -> b[i].y <=. b[x].y <. b[i].y +. !m <=. b[i].y +. delta };*)
-	  assert { forall x. 0 <= x < b.length -> mu -. delta <. a[x].x <. mu +. delta };
 	  assert { forall x. 0 <= x < b.length -> b[x].x = a[p.direct x].x /\ mu -. delta <. b[x].x <. mu +. delta };
-
-	  assert { forall i j. distinct_indices_in_range i j 0 a.length ->
-     side[i] = side[j] -> delta <=. dist a[i] a[j] };
-	  assert { forall x. 0 <= x < b.length -> 0 <= p.direct x < b.length };
-	  assert { forall i j. distinct_indices_in_range i j 0 a.length -> sb[i] = sb[j] -> side[p.direct i] = side [p.direct j] (*/\ a[p.direct i] = a [p.direct j]*) };
-	  assert { forall i j. distinct_indices_in_range i j 0 a.length -> distinct_indices_in_range (p.direct i) (p.direct j) 0 a.length 
-/\ (side[p.direct i] = side [p.direct j] -> delta <=. dist a[p.direct i]  a[p.direct j]) };
-	  (*assert { forall i j. distinct_indices_in_range i j 0 a.length -> side[p.direct i] = side [p.direct j] -> delta <=. dist a[p.direct i]  a[p.direct j] };*)
-	  assert { forall i j. distinct_indices_in_range i j 0 a.length -> sb[i] = side[p.direct i] /\ sb[j] = side[p.direct j] /\ b[i] = a[p.direct i] /\ b[j] = a[p.direct j] /\ sb[i] = sb[j] -> delta <=. dist b[i] b[j] };
-	  assert { forall x. 0 <= x < a.length -> sb[x] = side[p.direct x] /\  b[x] = a[p.direct x] };
-	  assert { forall i j. distinct_indices_in_range i j 0 a.length -> sb[i] = sb[j] -> delta <=. dist b[i] b[j] };
-
-	  (*assert { forall x. 0 <= x < a.length -> if sb[x] then b[x].x >=. mu else b[x].x <=. mu };
-	  assert { forall x. 0 <= x < a.length -> if b[x].x >. mu then sb[x] else if b[x].x <. mu then not sb[x] else true };
-	  assert { sb[0] = side[p.direct 0] };*)
-
 	  too_many_points_in_rectangle b mu delta i sb;
 	  end;
         let d = dist b[i] b[j] in
-        if d <. !m then 
-	  begin
-	  (*assert { forall x y. (x < i \/ (x = i /\ y < j+1)) -> (x < i \/ (x = i /\ y < j)) \/ (x=i /\ y=j+1) };*)
-	  (m := d; f := i; s := j);
-	  end
+        if d <. !m then (m := d; f := i; s := j)
      done
     with Break -> ()
     end
-  done; 
-  assert { forall i j. distinct_indices_in_range i j 0 a.length -> dist a[i] a[j] = dist b[p.reciprocal i] b[p.reciprocal j] };
+  done;
   if !m <. delta then
     begin
     assert { forall i j. distinct_indices_in_range i j 0 a.length -> dist b[i] b[j] >=. !m };
     assert { forall i j. distinct_indices_in_range i j 0 a.length -> dist a[i] a[j] = dist b[p.reciprocal i] b[p.reciprocal j] >=. !m };
     let f' = p.direct !f in let s' = p.direct !s in
-    assert { dist a[f'] a[s'] = !m /\ distinct_indices_in_range f' s' 0 a.length}; (* AE: 3s postcondition alone, 2s assert then instant pc; CVC: 2s pc alone, instant assert then 1s pc *)
+    assert { dist a[f'] a[s'] = !m /\ distinct_indices_in_range f' s' 0 a.length};
     { delta = !m ; first = f'; second = s' }
     end
   else
     begin
-    assert { forall i j. distinct_indices_in_range i j 0 a.length -> dist b[i] b[j] >=. delta }; (*.58 -> .04+.41*)
+    assert { forall i j. distinct_indices_in_range i j 0 a.length -> dist b[i] b[j] >=. delta };
     assert { forall i j. distinct_indices_in_range i j 0 a.length -> dist a[i] a[j] = dist b[p.reciprocal i] b[p.reciprocal j] >=. delta };
     { delta = delta ; first = 0; second = 0 }
     end
-
-
 end
 end
